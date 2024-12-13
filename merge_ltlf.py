@@ -90,17 +90,18 @@ class LTLFPair:
         except FileNotFoundError:
             raise FileNotFoundError(f"LTLF file not found: {self.ltlf_path}")
 
-    def relabel_variables(self, var_manager: VariableManager, mapping: Dict[str, str]) -> None:
+    def relabel_variables(self, mapping: Dict[str, str]) -> str:
         """
         Relabel variables using provided mapping.
 
-        This method updates both the formula in the .ltlf file and the
-        variables in the .part file according to the provided mapping.
+        This method updates the formula in the .ltlf file using the provided mapping.
         The mapping ensures no variable appears in both inputs and outputs.
 
         Args:
-            var_manager: VariableManager instance for generating new variable names
             mapping: Dictionary mapping old variable names to new ones
+
+        Returns:
+            The relabeled formula
         """
         # Update formula with new variable names
         formula = self.formula
@@ -111,13 +112,26 @@ class LTLFPair:
                 new_var,
                 formula
             )
-        self.formula = formula
+        return formula
 
-        # Update input variables
-        self.inputs = [mapping.get(var, var) for var in self.inputs]
+    def write_files(self, prefix: str, formula: str, inputs: List[str], outputs: List[str]) -> None:
+        """
+        Write merged formula and parameters to output files.
 
-        # Update output variables
-        self.outputs = [mapping.get(var, var) for var in self.outputs]
+        Args:
+            prefix: Base name for output files
+            formula: The merged formula to write
+            inputs: List of input variables
+            outputs: List of output variables
+        """
+        # Write merged formula to output file
+        with open(f"{prefix}.ltlf", "w") as f:
+            f.write(formula)
+
+        # Write merged parameters to output file with colons
+        with open(f"{prefix}.part", "w") as f:
+            f.write(".inputs: " + " ".join(sorted(inputs)) + "\n")
+            f.write(".outputs: " + " ".join(sorted(outputs)) + "\n")
 
 
 class LTLFMerger:
@@ -158,94 +172,165 @@ class LTLFMerger:
             - List of merged output variables
         """
         self.var_manager.reset()
-        mapping: Dict[str, str] = {}
-        output_mapping: Dict[str, str] = {}  # Special mapping for output occurrences
-        used_vars: Set[str] = set()
+        input_vars: Dict[str, Set[str]] = {}
+        output_vars: Dict[str, Set[str]] = {}
 
-        # First pass: collect all input and output variables
-        all_inputs: Set[str] = set()
-        all_outputs: Set[str] = set()
+        # Debug print for input analysis
+        print("=== Debug: Variable Usage Analysis ===")
+
+        # Load all pairs and collect variable usage
         for pair in pairs:
-            all_inputs.update(pair.inputs)
-            all_outputs.update(pair.outputs)
+            pair.load_files()
+            print(f"\nFile: {pair.ltlf_path}")
+            print(f"Inputs: {pair.inputs}")
+            print(f"Outputs: {pair.outputs}")
 
-        # Find conflicts (variables that appear in both inputs and outputs)
-        conflicts = all_inputs.intersection(all_outputs)
+            for var in pair.inputs:
+                if var not in input_vars:
+                    input_vars[var] = set()
+                input_vars[var].add(pair.ltlf_path)
+            for var in pair.outputs:
+                if var not in output_vars:
+                    output_vars[var] = set()
+                output_vars[var].add(pair.ltlf_path)
 
-        # Create new mapping for all variables to ensure minimal usage
-        next_input_var = 1
-        next_output_var = max(len(all_inputs), len(all_outputs)) + 1
+        print("\nInput variables usage:")
+        for var, files in input_vars.items():
+            print(f"{var}: appears in {len(files)} files")
 
-        # First, map all input variables
-        for var in sorted(all_inputs):
-            new_var = f"p{next_input_var}"
-            mapping[var] = new_var
-            used_vars.add(new_var)
-            next_input_var += 1
+        print("\nOutput variables usage:")
+        for var, files in output_vars.items():
+            print(f"{var}: appears in {len(files)} files")
 
-        # Then, map output variables
-        for var in sorted(all_outputs):
-            if var in conflicts:
-                # For conflicts, create a new output variable
-                new_var = f"p{next_output_var}"
+        # Find variables that can be merged (appear in same role but different files)
+        input_groups: List[Set[str]] = []
+        output_groups: List[Set[str]] = []
+        used_vars = set()  # Track all used variable names
+
+        # Group input variables that can be merged
+        sorted_inputs = sorted(input_vars.keys())
+        for var1 in sorted_inputs:
+            files1 = input_vars[var1]
+            merged = False
+            # Try to add to existing group first
+            for group in input_groups:
+                can_merge = True
+                for var2 in group:
+                    # Check if variables appear in same file
+                    if files1.intersection(input_vars[var2]):
+                        can_merge = False
+                        break
+                if can_merge:
+                    group.add(var1)
+                    merged = True
+                    break
+            # Create new group if couldn't merge with existing
+            if not merged:
+                input_groups.append({var1})
+
+        print("\nInput groups for merging:")
+        for i, group in enumerate(input_groups):
+            print(f"Group {i + 1}: {sorted(group)}")
+
+        # Group output variables that can be merged
+        sorted_outputs = sorted(output_vars.keys())
+        for var1 in sorted_outputs:
+            files1 = output_vars[var1]
+            merged = False
+            # Try to add to existing group first
+            for group in output_groups:
+                can_merge = True
+                for var2 in group:
+                    # Check if variables appear in same file
+                    if files1.intersection(output_vars[var2]):
+                        can_merge = False
+                        break
+                if can_merge:
+                    group.add(var1)
+                    merged = True
+                    break
+            # Create new group if couldn't merge with existing
+            if not merged:
+                output_groups.append({var1})
+
+        print("\nOutput groups for merging:")
+        for i, group in enumerate(output_groups):
+            print(f"Group {i + 1}: {sorted(group)}")
+
+        # Create optimized mappings
+        input_mapping: Dict[str, str] = {}
+        output_mapping: Dict[str, str] = {}
+        var_counter = 1
+
+        # First pass: Map input groups, preserving variables that shouldn't be merged
+        for group in input_groups:
+            # Check if variables in this group share common variables in their files
+            common_vars = set()
+            for var1 in group:
+                for var2 in group:
+                    if var1 < var2:  # Only check each pair once
+                        files1 = input_vars[var1]
+                        files2 = input_vars[var2]
+                        # Find variables that appear with both var1 and var2
+                        for var in input_vars:
+                            if var != var1 and var != var2:
+                                if any(input_vars[var].intersection(files1)) and any(input_vars[var].intersection(files2)):
+                                    common_vars.add(var)
+
+            # Merge variables if they share common variables and don't appear in same files
+            should_merge = len(common_vars) > 0 and all(
+                not input_vars[var1].intersection(input_vars[var2])
+                for var1 in group
+                for var2 in group
+                if var1 < var2
+            )
+
+            if should_merge:
+                # Merge all variables in group to same new variable
+                new_var = f"p{var_counter}"
+                var_counter += 1
+                for var in sorted(group):
+                    input_mapping[var] = new_var
+            else:
+                # Keep variables distinct
+                for var in sorted(group):
+                    new_var = f"p{var_counter}"
+                    var_counter += 1
+                    input_mapping[var] = new_var
+
+        # Second pass: Map output groups to completely new variables
+        # Keep output variables distinct to preserve the correct number
+        for group in output_groups:
+            for var in sorted(group):
+                new_var = f"p{var_counter}"
+                var_counter += 1
                 output_mapping[var] = new_var
-                used_vars.add(new_var)
-                next_output_var += 1
-            elif var not in mapping:
-                new_var = f"p{next_input_var}"
-                mapping[var] = new_var
-                used_vars.add(new_var)
-                next_input_var += 1
+        print("\nFinal mappings:")
+        print("Inputs:", input_mapping)
+        print("Outputs:", output_mapping)
 
-        # Apply relabeling to all pairs
-        merged_pairs = []
-        for pair in pairs:
-            new_pair = LTLFPair(pair.ltlf_path, pair.part_path)
+        # Merge formulas and apply mappings
+        merged_formula = ""
+        all_inputs = set()
+        all_outputs = set()
 
-            # Handle inputs using regular mapping
-            new_pair.inputs = [mapping[var] for var in pair.inputs]
+        for i, pair in enumerate(pairs):
+            # Create separate mappings for formula to preserve variable relationships
+            formula_mapping = {**input_mapping}  # Only use input mapping for formula
+            relabeled_formula = pair.relabel_variables(formula_mapping)
 
-            # Handle outputs using output_mapping for conflicts
-            new_pair.outputs = []
+            if i == 0:
+                merged_formula = relabeled_formula
+            else:
+                merged_formula = f"({merged_formula} && {relabeled_formula})"
+
+            # Collect all unique mapped variables
+            for var in pair.inputs:
+                all_inputs.add(input_mapping[var])
             for var in pair.outputs:
-                if var in conflicts:
-                    new_pair.outputs.append(output_mapping[var])
-                else:
-                    new_pair.outputs.append(mapping[var])
+                all_outputs.add(output_mapping[var])
 
-            # Update formula
-            formula = new_pair.formula
-
-            # For each variable in the formula, determine if it's used in an output context
-            # by checking if it appears in the outputs of this pair
-            formula_mapping = mapping.copy()
-            for var in pair.outputs:
-                if var in output_mapping:
-                    formula_mapping[var] = output_mapping[var]
-
-            # Apply mappings to formula, longest variable names first to avoid partial matches
-            for var in sorted(formula_mapping.keys(), key=len, reverse=True):
-                formula = re.sub(
-                    rf'\b{var}\b',
-                    formula_mapping[var],
-                    formula
-                )
-            new_pair.formula = formula
-
-            merged_pairs.append(new_pair)
-
-        # Create merged formula with proper bracketing
-        merged_formula = "(" + " && ".join(p.formula for p in merged_pairs) + ")"
-
-        # Create merged inputs and outputs lists
-        merged_inputs = sorted(set(v for p in merged_pairs for v in p.inputs))
-        merged_outputs = sorted(set(v for p in merged_pairs for v in p.outputs))
-
-        # Verify no variable appears in both inputs and outputs
-        assert len(set(merged_inputs) & set(merged_outputs)) == 0, \
-            "Bug: Variable appears in both inputs and outputs after merging"
-
-        return merged_formula, merged_inputs, merged_outputs
+        return merged_formula, sorted(all_inputs), sorted(all_outputs)
 
     def random_merge(self, n: int, filtered_dir: str) -> Tuple[str, List[str], List[str]]:
         """Randomly select and merge n pairs of files."""
@@ -286,36 +371,22 @@ def main():
 
     if args.test:
         import unittest
-        import sys
-        sys.path.append(os.path.dirname(os.path.abspath(__file__)))
         from tests.test_merge_ltlf import TestLTLFMerger
         suite = unittest.TestLoader().loadTestsFromTestCase(TestLTLFMerger)
         runner = unittest.TextTestRunner(verbosity=2)
         result = runner.run(suite)
         sys.exit(not result.wasSuccessful())
-        return
 
     merger = LTLFMerger()
     try:
         formula, inputs, outputs = merger.random_merge(args.n, args.filtered_dir)
-
-        # Write merged formula to output file
-        with open(f"{args.output_prefix}.ltlf", "w") as f:
-            f.write(formula)
-
-        # Write merged parameters to output file
-        with open(f"{args.output_prefix}.part", "w") as f:
-            f.write(".inputs " + " ".join(sorted(inputs)) + "\n")
-            f.write(".outputs " + " ".join(sorted(outputs)) + "\n")
-
-        print(f"Successfully merged {args.n} LTLF pairs.")
+        pair = LTLFPair("", "")  # Dummy pair for writing files
+        pair.write_files(args.output_prefix, formula, inputs, outputs)
+        print(f"Successfully merged {args.n} file pairs.")
         print(f"Output files: {args.output_prefix}.ltlf and {args.output_prefix}.part")
     except Exception as e:
-        print(f"Error: {str(e)}")
+        print(f"Error: {str(e)}", file=sys.stderr)
         sys.exit(1)
-
-if __name__ == "__main__":
-    main()
 
 
 if __name__ == "__main__":
