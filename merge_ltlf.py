@@ -157,42 +157,79 @@ class LTLFMerger:
         """
         self.var_manager.reset()
         mapping: Dict[str, str] = {}
+        output_mapping: Dict[str, str] = {}  # Special mapping for output occurrences
+        used_vars: Set[str] = set()
 
-        # Collect all variables
+        # First pass: collect all input and output variables
         all_inputs: Set[str] = set()
         all_outputs: Set[str] = set()
         for pair in pairs:
             all_inputs.update(pair.inputs)
             all_outputs.update(pair.outputs)
 
-        # Handle conflicts and create mapping
-        used_vars: Set[str] = set()
-
-        # First, handle variables that appear in both inputs and outputs
+        # Find conflicts (variables that appear in both inputs and outputs)
         conflicts = all_inputs.intersection(all_outputs)
-        for var in conflicts:
-            new_var = self.var_manager.get_new_var()
+
+        # Create new mapping for all variables to ensure minimal usage
+        next_input_var = 1
+        next_output_var = max(len(all_inputs), len(all_outputs)) + 1
+
+        # First, map all input variables
+        for var in sorted(all_inputs):
+            new_var = f"p{next_input_var}"
             mapping[var] = new_var
             used_vars.add(new_var)
+            next_input_var += 1
 
-        # Then try to reuse existing variable names when possible
-        for var in all_inputs.union(all_outputs):
-            if var not in mapping:
-                if var not in used_vars:
-                    # Can reuse the original name
-                    mapping[var] = var
-                    used_vars.add(var)
-                else:
-                    # Need a new name
-                    new_var = self.var_manager.get_new_var()
-                    mapping[var] = new_var
-                    used_vars.add(new_var)
+        # Then, map output variables
+        for var in sorted(all_outputs):
+            if var in conflicts:
+                # For conflicts, create a new output variable
+                new_var = f"p{next_output_var}"
+                output_mapping[var] = new_var
+                used_vars.add(new_var)
+                next_output_var += 1
+            elif var not in mapping:
+                new_var = f"p{next_input_var}"
+                mapping[var] = new_var
+                used_vars.add(new_var)
+                next_input_var += 1
 
         # Apply relabeling to all pairs
         merged_pairs = []
         for pair in pairs:
             new_pair = LTLFPair(pair.ltlf_path, pair.part_path)
-            new_pair.relabel_variables(self.var_manager, mapping)
+
+            # Handle inputs using regular mapping
+            new_pair.inputs = [mapping[var] for var in pair.inputs]
+
+            # Handle outputs using output_mapping for conflicts
+            new_pair.outputs = []
+            for var in pair.outputs:
+                if var in conflicts:
+                    new_pair.outputs.append(output_mapping[var])
+                else:
+                    new_pair.outputs.append(mapping[var])
+
+            # Update formula
+            formula = new_pair.formula
+
+            # For each variable in the formula, determine if it's used in an output context
+            # by checking if it appears in the outputs of this pair
+            formula_mapping = mapping.copy()
+            for var in pair.outputs:
+                if var in output_mapping:
+                    formula_mapping[var] = output_mapping[var]
+
+            # Apply mappings to formula, longest variable names first to avoid partial matches
+            for var in sorted(formula_mapping.keys(), key=len, reverse=True):
+                formula = re.sub(
+                    rf'\b{var}\b',
+                    formula_mapping[var],
+                    formula
+                )
+            new_pair.formula = formula
+
             merged_pairs.append(new_pair)
 
         # Create merged formula with proper bracketing
@@ -201,6 +238,10 @@ class LTLFMerger:
         # Create merged inputs and outputs lists
         merged_inputs = sorted(set(v for p in merged_pairs for v in p.inputs))
         merged_outputs = sorted(set(v for p in merged_pairs for v in p.outputs))
+
+        # Verify no variable appears in both inputs and outputs
+        assert len(set(merged_inputs) & set(merged_outputs)) == 0, \
+            "Bug: Variable appears in both inputs and outputs after merging"
 
         return merged_formula, merged_inputs, merged_outputs
 
@@ -214,44 +255,57 @@ class LTLFMerger:
 
 
 def main():
-    """Main entry point for the script."""
+    """Main function to handle command line arguments and execute merging"""
     import argparse
-    import sys
 
-    parser = argparse.ArgumentParser(description='Merge LTLF file pairs.')
+    parser = argparse.ArgumentParser(description='Merge LTLF files')
     parser.add_argument('--n', type=int, default=2,
-                       help='Number of file pairs to merge (default: 2)')
+                       help='Number of file pairs to merge')
     parser.add_argument('--output-prefix', type=str, default='merged',
-                       help='Prefix for output files (default: merged)')
+                       help='Prefix for output files')
     parser.add_argument('--filtered-dir', type=str, default='syft_1_filtered',
-                       help='Directory containing filtered files (default: syft_1_filtered)')
+                       help='Directory containing filtered LTLF files')
+    parser.add_argument('--test', action='store_true',
+                       help='Run test suite')
 
     args = parser.parse_args()
 
-    try:
-        merger = LTLFMerger(args.filtered_dir)
-        merged_formula, inputs, outputs = merger.random_merge(args.n)
+    if args.test:
+        import unittest
+        import sys
+        # Add the tests directory to Python path
+        sys.path.append('tests')
+        # Load and run tests
+        from test_merge_ltlf import TestLTLFMerger
+        suite = unittest.TestLoader().loadTestsFromTestCase(TestLTLFMerger)
+        runner = unittest.TextTestRunner(verbosity=2)
+        result = runner.run(suite)
+        sys.exit(not result.wasSuccessful())
 
-        # Write output files
-        ltlf_file = f"{args.output_prefix}.ltlf"
-        part_file = f"{args.output_prefix}.part"
+    merger = LTLFMerger()
+    pairs = merger.get_file_pairs(args.filtered_dir)
 
-        with open(ltlf_file, 'w') as f:
-            f.write(merged_formula)
+    if len(pairs) < args.n:
+        print(f"Error: Not enough file pairs in {args.filtered_dir}. "
+              f"Found {len(pairs)}, requested {args.n}")
+        return 1
 
-        with open(part_file, 'w') as f:
-            f.write(f".inputs: {' '.join(inputs)}\n")
-            f.write(f".outputs: {' '.join(outputs)}\n")
+    # Randomly select n pairs
+    import random
+    selected_pairs = random.sample(pairs, args.n)
 
-        print(f"Successfully merged {args.n} file pairs:")
-        print(f"- LTLF file: {ltlf_file}")
-        print(f"- Part file: {part_file}")
-        print(f"\nInput variables: {len(inputs)}")
-        print(f"Output variables: {len(outputs)}")
+    # Merge the selected pairs
+    formula, inputs, outputs = merger.random_merge(selected_pairs)
 
-    except Exception as e:
-        print(f"Error: {str(e)}", file=sys.stderr)
-        sys.exit(1)
+    # Write output files
+    with open(f"{args.output_prefix}.ltlf", "w") as f:
+        f.write(formula)
+
+    with open(f"{args.output_prefix}.part", "w") as f:
+        f.write(f".inputs: {' '.join(inputs)}\n")
+        f.write(f".outputs: {' '.join(outputs)}\n")
+
+    return 0
 
 
 if __name__ == "__main__":
