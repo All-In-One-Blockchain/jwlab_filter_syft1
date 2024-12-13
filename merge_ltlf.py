@@ -9,9 +9,12 @@ This script implements functionality to:
 """
 
 import os
+import glob
 import random
+import sys
+import argparse
 import re
-from typing import Dict, List, Set, Tuple
+from typing import List, Tuple, Set, Dict
 
 
 class VariableManager:
@@ -120,19 +123,18 @@ class LTLFPair:
 class LTLFMerger:
     """Handles merging of multiple LTLF pairs."""
 
-    def __init__(self, filtered_dir: str):
+    def __init__(self):
         """Initialize merger with directory containing filtered files."""
-        self.filtered_dir: str = filtered_dir
         self.var_manager: VariableManager = VariableManager()
 
-    def get_file_pairs(self) -> List[LTLFPair]:
+    def get_file_pairs(self, filtered_dir: str) -> List[LTLFPair]:
         """Get list of all .ltlf/.part file pairs in directory."""
         pairs = []
-        for filename in os.listdir(self.filtered_dir):
+        for filename in os.listdir(filtered_dir):
             if filename.endswith('.ltlf'):
                 base = filename[:-5]  # Remove .ltlf extension
-                ltlf_path = os.path.join(self.filtered_dir, f"{base}.ltlf")
-                part_path = os.path.join(self.filtered_dir, f"{base}.part")
+                ltlf_path = os.path.join(filtered_dir, f"{base}.ltlf")
+                part_path = os.path.join(filtered_dir, f"{base}.part")
                 if os.path.exists(part_path):
                     pairs.append(LTLFPair(ltlf_path, part_path))
         return pairs
@@ -245,9 +247,9 @@ class LTLFMerger:
 
         return merged_formula, merged_inputs, merged_outputs
 
-    def random_merge(self, n: int) -> Tuple[str, List[str], List[str]]:
+    def random_merge(self, n: int, filtered_dir: str) -> Tuple[str, List[str], List[str]]:
         """Randomly select and merge n pairs of files."""
-        all_pairs = self.get_file_pairs()
+        all_pairs = self.get_file_pairs(filtered_dir)
         if n > len(all_pairs):
             raise ValueError(f"Requested {n} pairs but only {len(all_pairs)} available")
         selected_pairs = random.sample(all_pairs, n)
@@ -255,57 +257,60 @@ class LTLFMerger:
 
 
 def main():
-    """Main function to handle command line arguments and execute merging"""
-    import argparse
-
-    parser = argparse.ArgumentParser(description='Merge LTLF files')
-    parser.add_argument('--n', type=int, default=2,
-                       help='Number of file pairs to merge')
-    parser.add_argument('--output-prefix', type=str, default='merged',
-                       help='Prefix for output files')
-    parser.add_argument('--filtered-dir', type=str, default='syft_1_filtered',
-                       help='Directory containing filtered LTLF files')
-    parser.add_argument('--test', action='store_true',
-                       help='Run test suite')
-
+    """Main entry point for the script."""
+    parser = argparse.ArgumentParser(description="Merge LTLF files.")
+    parser.add_argument(
+        "--n",
+        type=int,
+        default=2,
+        help="Number of file pairs to merge (default: 2)",
+    )
+    parser.add_argument(
+        "--output-prefix",
+        type=str,
+        default="merged",
+        help="Prefix for output files (default: merged)",
+    )
+    parser.add_argument(
+        "--filtered-dir",
+        type=str,
+        default="syft_1_filtered",
+        help="Directory containing filtered LTLF files (default: syft_1_filtered)",
+    )
+    parser.add_argument(
+        "--test",
+        action="store_true",
+        help="Run test suite",
+    )
     args = parser.parse_args()
 
     if args.test:
         import unittest
-        import sys
-        # Add the tests directory to Python path
-        sys.path.append('tests')
-        # Load and run tests
-        from test_merge_ltlf import TestLTLFMerger
-        suite = unittest.TestLoader().loadTestsFromTestCase(TestLTLFMerger)
-        runner = unittest.TextTestRunner(verbosity=2)
-        result = runner.run(suite)
-        sys.exit(not result.wasSuccessful())
+        from tests.test_merge_ltlf import TestLTLFMerger
+        unittest.main(argv=['dummy'])
+        return
 
     merger = LTLFMerger()
-    pairs = merger.get_file_pairs(args.filtered_dir)
+    try:
+        formula, inputs, outputs = merger.random_merge(args.n, args.filtered_dir)
 
-    if len(pairs) < args.n:
-        print(f"Error: Not enough file pairs in {args.filtered_dir}. "
-              f"Found {len(pairs)}, requested {args.n}")
-        return 1
+        # Write merged formula to output file
+        with open(f"{args.output_prefix}.ltlf", "w") as f:
+            f.write(formula)
 
-    # Randomly select n pairs
-    import random
-    selected_pairs = random.sample(pairs, args.n)
+        # Write merged parameters to output file
+        with open(f"{args.output_prefix}.part", "w") as f:
+            f.write(".inputs " + " ".join(sorted(inputs)) + "\n")
+            f.write(".outputs " + " ".join(sorted(outputs)) + "\n")
 
-    # Merge the selected pairs
-    formula, inputs, outputs = merger.random_merge(selected_pairs)
+        print(f"Successfully merged {args.n} LTLF pairs.")
+        print(f"Output files: {args.output_prefix}.ltlf and {args.output_prefix}.part")
+    except Exception as e:
+        print(f"Error: {str(e)}")
+        sys.exit(1)
 
-    # Write output files
-    with open(f"{args.output_prefix}.ltlf", "w") as f:
-        f.write(formula)
-
-    with open(f"{args.output_prefix}.part", "w") as f:
-        f.write(f".inputs: {' '.join(inputs)}\n")
-        f.write(f".outputs: {' '.join(outputs)}\n")
-
-    return 0
+if __name__ == "__main__":
+    main()
 
 
 if __name__ == "__main__":
