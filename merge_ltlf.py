@@ -139,7 +139,7 @@ class LTLFMerger:
                     pairs.append(LTLFPair(ltlf_path, part_path))
         return pairs
 
-    def merge_pairs(self, pairs: List[LTLFPair]) -> Tuple[str, List[str], List[str]]:
+    def merge_pairs(self, pairs: List[LTLFPair], filtered_dir: str) -> Tuple[str, List[str], List[str]]:
         """
         Merge multiple LTLF pairs into a single pair.
 
@@ -253,7 +253,7 @@ class LTLFMerger:
         if n > len(all_pairs):
             raise ValueError(f"Requested {n} pairs but only {len(all_pairs)} available")
         selected_pairs = random.sample(all_pairs, n)
-        return self.merge_pairs(selected_pairs)
+        return self.merge_pairs(selected_pairs, filtered_dir)
 
 
 def main():
@@ -286,8 +286,13 @@ def main():
 
     if args.test:
         import unittest
+        import sys
+        sys.path.append(os.path.dirname(os.path.abspath(__file__)))
         from tests.test_merge_ltlf import TestLTLFMerger
-        unittest.main(argv=['dummy'])
+        suite = unittest.TestLoader().loadTestsFromTestCase(TestLTLFMerger)
+        runner = unittest.TextTestRunner(verbosity=2)
+        result = runner.run(suite)
+        sys.exit(not result.wasSuccessful())
         return
 
     merger = LTLFMerger()

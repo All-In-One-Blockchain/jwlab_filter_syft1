@@ -1,6 +1,7 @@
 import unittest
 import os
 import shutil
+from typing import List, Tuple
 from merge_ltlf import LTLFMerger, LTLFPair
 
 class TestLTLFMerger(unittest.TestCase):
@@ -8,15 +9,15 @@ class TestLTLFMerger(unittest.TestCase):
         """Set up test environment before each test"""
         self.test_dir = "test_files"
         os.makedirs(self.test_dir, exist_ok=True)
-        self.merger = LTLFMerger(self.test_dir)
+        self.merger = LTLFMerger()  # Remove filtered_dir parameter
 
     def tearDown(self):
         """Clean up test environment after each test"""
         if os.path.exists(self.test_dir):
             shutil.rmtree(self.test_dir)
 
-    def create_test_files(self, base_name: str, inputs: list[str],
-                         outputs: list[str], formula: str) -> tuple[str, str]:
+    def create_test_files(self, base_name: str, inputs: List[str],
+                         outputs: List[str], formula: str) -> Tuple[str, str]:
         """Helper method to create test .ltlf and .part files"""
         ltlf_path = os.path.join(self.test_dir, f"{base_name}.ltlf")
         part_path = os.path.join(self.test_dir, f"{base_name}.part")
@@ -53,7 +54,7 @@ class TestLTLFMerger(unittest.TestCase):
             LTLFPair(ltlf2, part2)
         ]
 
-        formula, inputs, outputs = self.merger.merge_pairs(pairs)
+        formula, inputs, outputs = self.merger.merge_pairs(pairs, self.test_dir)
 
         # Verify no variable appears in both inputs and outputs
         self.assertEqual(len(set(inputs) & set(outputs)), 0)
@@ -87,7 +88,7 @@ class TestLTLFMerger(unittest.TestCase):
             LTLFPair(ltlf2, part2)
         ]
 
-        formula, inputs, outputs = self.merger.merge_pairs(pairs)
+        formula, inputs, outputs = self.merger.merge_pairs(pairs, self.test_dir)
 
         # Verify no variable appears in both inputs and outputs
         self.assertEqual(len(set(inputs) & set(outputs)), 0)
@@ -120,7 +121,7 @@ class TestLTLFMerger(unittest.TestCase):
             LTLFPair(ltlf2, part2)
         ]
 
-        formula, inputs, outputs = self.merger.merge_pairs(pairs)
+        formula, inputs, outputs = self.merger.merge_pairs(pairs, self.test_dir)
 
         # Get all variable numbers
         all_vars = set()
@@ -155,7 +156,7 @@ class TestLTLFMerger(unittest.TestCase):
             LTLFPair(ltlf2, part2)
         ]
 
-        formula, inputs, outputs = self.merger.merge_pairs(pairs)
+        formula, inputs, outputs = self.merger.merge_pairs(pairs, self.test_dir)
 
         # Verify handling of empty sets
         self.assertEqual(len(set(inputs) & set(outputs)), 0)
@@ -183,7 +184,7 @@ class TestLTLFMerger(unittest.TestCase):
             LTLFPair(ltlf2, part2)
         ]
 
-        formula, inputs, outputs = self.merger.merge_pairs(pairs)
+        formula, inputs, outputs = self.merger.merge_pairs(pairs, self.test_dir)
 
         # Verify proper bracketing
         self.assertEqual(formula.count("("), formula.count(")"))
