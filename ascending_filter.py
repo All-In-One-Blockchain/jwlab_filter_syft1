@@ -32,11 +32,9 @@ def copy_file_pairs(src_dir: Path, dest_dir: Path, t_group: str, file_num: str) 
     part_file = src_dir / f"f{padded_num}.part"
 
     if ltlf_file.exists() and part_file.exists():
-        out_dir = dest_dir / src_dir.name
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-        shutil.copy2(ltlf_file, out_dir)
-        shutil.copy2(part_file, out_dir)
+        dest_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ltlf_file, dest_dir / f"{t_group}_f{padded_num}.ltlf")
+        shutil.copy2(part_file, dest_dir / f"{t_group}_f{padded_num}.part")
         return True
     return False
 
@@ -59,7 +57,7 @@ def main():
             for file_num in realizable_files[t_group]:
                 if copy_file_pairs(tree_dir, output_dir, t_group, file_num):
                     processed += 1
-                    print(f"Copied files for {t_group}/f{file_num} from {tree_dir.name}")
+                    print(f"Copied files: {t_group}_f{file_num}.ltlf and {t_group}_f{file_num}.part")
 
     print(f"\nTotal file pairs copied: {processed}")
 
