@@ -1,0 +1,21 @@
+INFO {
+  TITLE:       "Ascending_treeSize_3_158"
+  DESCRIPTION: "random fomula from randltl of spot with tree size 300"
+  SEMANTICS:   Finite,Mealy
+  TARGET:      Mealy
+}
+
+MAIN {
+
+  INPUTS {
+  }
+
+  OUTPUTS {
+    p3;
+  }
+
+  GUARANTEES {
+    G(p3)
+  }
+
+}

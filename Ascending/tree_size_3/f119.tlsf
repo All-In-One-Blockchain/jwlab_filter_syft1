@@ -1,0 +1,32 @@
+INFO {
+  TITLE:       "Ascending_treeSize_3_119"
+  DESCRIPTION: "random fomula from randltl of spot with tree size 300"
+  SEMANTICS:   Finite,Mealy
+  TARGET:      Mealy
+}
+
+MAIN {
+
+  INPUTS {
+    p0;
+    p11;
+    p2;
+    p4;
+    p6;
+  }
+
+  OUTPUTS {
+    p1;
+    p10;
+    p13;
+    p14;
+    p3;
+    p8;
+    p9;
+  }
+
+  GUARANTEES {
+    F(((((p13) || (G(p0))) R (!(X(p8)))) U ((p11) || (F(!((p6) -> (G((p6) && (p13)))))))) || ((!(G(F(p4)))) U ((F(p14)) R (p9))) || ((!(X(p0))) -> (F(p2))) || (F(X((G(!((F(p10)) R ((!(F(p14))) U (F(p8)))))) && (((p3) R (X((p2) && (p14)))) U (!(G(F((X(X(!(p1)))) U ((p10) -> (p4)))))))))))
+  }
+
+}

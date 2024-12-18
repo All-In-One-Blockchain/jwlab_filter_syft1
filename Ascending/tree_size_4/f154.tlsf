@@ -1,0 +1,36 @@
+INFO {
+  TITLE:       "Ascending_treeSize_4_154"
+  DESCRIPTION: "random fomula from randltl of spot with tree size 400"
+  SEMANTICS:   Finite,Mealy
+  TARGET:      Mealy
+}
+
+MAIN {
+
+  INPUTS {
+    p10;
+    p11;
+    p12;
+    p15;
+    p5;
+    p6;
+    p7;
+  }
+
+  OUTPUTS {
+    p0;
+    p1;
+    p13;
+    p14;
+    p2;
+    p3;
+    p4;
+    p8;
+    p9;
+  }
+
+  GUARANTEES {
+    X((G(X((F(G(X(X(!(((F((p12) U (p13))) U (p1)) && ((F(p12)) || (G(p12))))))))) R ((F(((p15) && (X(!((G((p6) U (!(p0)))) && (((!(p5)) U (p15)) -> (p8)))))) R ((G(F(!(p10)))) -> (F((p9) || ((p1) && ((p5) U (p4)))))))) U (p10))))) && (!(X(G(X(((X(X(X((true) U (F(((p0) R ((!(p7)) && (X(p10)))) U (F(((F(X(p11))) -> (X(p10))) -> (X(p11)))))))))) R (((((G(X(p15))) R (F(p7))) U (p11)) -> ((p0) -> (!(p7)))) && ((X(X((X(p2)) && ((F(p9)) || ((p6) R (p12))) && (F(((p15) -> (G(p0))) U (G(p4)))) && (((p4) R (p0)) R (p14)) && ((p1) || (G(p2)))))) U (X((X(F((p6) R ((X((p9) -> (X(p15)))) -> ((p4) || (!(p12)) || ((p15) R (p13))))))) R ((X(G(p10))) U (((((p7) R (!(G(p9)))) U (X(X((false))))) -> (X(F((G(!((F(p14)) -> (p11)))) U (F(p12)))))) U ((X(!(p3))) && (X(F(G((G(X(p8))) || ((false) R ((p8) R ((p10) -> (p5)))))))))))))))) U ((p14) || ((F(p14)) R (G(p10))) || (G((G(X(!(G(p8))))) R (p3))))))))))
+  }
+
+}
