@@ -5,6 +5,7 @@ from pathlib import Path
 import shutil
 
 def normalize_formula(content):
+    return content
     """Normalize formula by removing whitespace and newlines"""
     return ''.join(content.split())
 
@@ -25,7 +26,7 @@ def find_duplicates(directory):
     return {formula: paths for formula, paths in formulas.items() if len(paths) > 1}
 
 def main():
-    duplicates = find_duplicates('syft_1_filtered')
+    duplicates = find_duplicates('/home/lic/dev/create_new_benchmark/jwlab_filter_syft2/drafts/conjunct_2/ratio_5')
 
     # Create backup directory
     backup_dir = Path('syft_1_filtered_backup')
